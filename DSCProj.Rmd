@@ -1,0 +1,167 @@
+---
+title: "Data Science Capstone Project"
+author: "Terry Jones"
+date: "November 18, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary
+
+This project focuses on exploratory data analysis and goals for creating an app and the prediction algorithm. Major features of the data are explained that have been identified and briefly summarized for creating the prediction algorithm and a Shiny app in a way that is understandable to a non-data scientist manager. Tables and plots will be used to illustrate important summaries of the data set. A new term that you may see is "corpus" also known as a "text document collection" [Journal of Statistical Software, Mar 2008, Vol 25, Issue 5, pg. 5]
+
+```{r, eval=FALSE}
+setwd("C:/Users/tljon/datasciencecoursera/Coursera-SwiftKey/final/en_US")
+# set libraries
+library(tm)
+library(NLP)
+library(ggplot2)
+library(stringi)
+library(dplyr)
+library(RWeka)
+library(wordcloud)
+```
+
+```{r}
+#Acquire Data
+##File has been dowloaded from course link and placed in the director as
+##stated above
+con = file("en_US.blogs.txt")
+blogs <- readLines(con, warn=FALSE, encoding="UTF-8", skipNul=TRUE)
+close(con)
+con = file("en_US.news.txt")
+news <- readLines(con, warn=FALSE, encoding = "UTF-8", skipNul = TRUE)
+close(con)
+con = file("en_US.twitter.txt")
+twitter <- readLines(con, warn=FALSE, encoding = "UTF-8", skipNul = TRUE)
+close(con)
+#Summarize data
+summary <- 
+    data.frame('File' = c("Blogs","News","Twitter"),
+                "File Size" = sapply(list(blogs, news, twitter), 
+                                    function(x){format(object.size(x),"MB")}),
+                'Rows' = sapply(list(blogs, news, twitter), 
+                                    function(x){length(x)}),
+                'Characters' = sapply(list(blogs, news, twitter), 
+                                    function(x){sum(nchar(x))}),
+                'MaxCharacters' = sapply(list(blogs, news, twitter), 
+                                    function(x){max(unlist(lapply(x,
+                                                function(y) nchar(y))))})
+)
+summary
+#Take a 5% Sample and Clean the data files
+set.seed(12345)
+sample_set <- c(sample(blogs, length(blogs) * 0.005),
+               sample(news, length(news) * 0.005),
+               sample(twitter, length(twitter) * 0.005)
+)
+#Sample Data Set
+summary_ss <- 
+    data.frame('File' = "Sample Set",
+               "File Size" = sapply(list(sample_set), 
+                                    function(x){format(object.size(x),"MB")}),
+               'Rows' = sapply(list(sample_set), 
+                               function(x){length(x)}),
+               'Characters' = sapply(list(sample_set), 
+                                     function(x){sum(nchar(x))}),
+               'MaxCharacters' = sapply(list(sample_set), 
+                                        function(x){max(unlist(lapply(x,
+                                                                      function(y) nchar(y))))})
+    )
+summary_ss
+#Remove all punctuation, numbers, whitespace, and change all characters to lower case, and plain text
+testdata <- iconv(sample_set, "UTF-8", "ASCII", sub="")
+corpus <- VCorpus(VectorSource(testdata))
+corpus <- tm_map(corpus, removePunctuation)
+corpus <- tm_map(corpus, removeNumbers)
+corpus <- tm_map(corpus, tolower)
+corpus <- tm_map(corpus, stripWhitespace)
+corpus <- tm_map(corpus, PlainTextDocument)
+###Apply N-grams
+####Split strings into N-grams with minimal and maximal numbers of grams.  Result is a character vector with the tokenized strings.
+unigram <- function(x) NGramTokenizer(x, Weka_control(min=1, max=1))
+bigram <- function(x) NGramTokenizer(x, Weka_control(min=2, max=2))
+trigram <- function(x) NGramTokenizer(x, Weka_control(min=3, max=3))
+####The Term Document Matrix constructs or coerces to a term-document matrix or a document-term matrix.  
+uniTDM <- TermDocumentMatrix(corpus, control=list(tokenize=unigram))
+biTDM <- TermDocumentMatrix(corpus, control=list(tokenize=bigram))
+triTDM <- TermDocumentMatrix(corpus, control=list(tokenize=trigram))
+####Find frequent terms in a document-term or term-document matrix.  This method works for all numeric weightings.  Returns a character vector of terms in "x" which occur more or equal often tha "lowfreq" times and less or equal often than "highfreq" times.
+uniTFF <- findFreqTerms(uniTDM, lowfreq = 50)
+biTFF <- findFreqTerms(biTDM, lowfreq = 50)
+triTFF <- findFreqTerms(triTDM, lowfreq = 10)
+uni_freq <- rowSums(as.matrix(uniTDM[uniTFF, ]))
+uni_freq <- data.frame(words=names(uni_freq), frequency=uni_freq)
+bi_freq <- rowSums(as.matrix(biTDM[biTFF, ]))
+bi_freq <- data.frame(words=names(bi_freq), frequency=bi_freq)
+tri_freq <- rowSums(as.matrix(triTDM[triTFF, ]))
+tri_freq <- data.frame(words=names(tri_freq), frequency=tri_freq)
+head(uni_freq)
+head(bi_freq)
+head(tri_freq)
+###Plot Ngrams (In sequence - Unigram, Bigram, and Trigram)
+####The first set of plots will be using the WordCloud plot (a good visual)
+##Unigram Frequency (100 words)
+wordcloud(words=uni_freq$words, freq=uni_freq$frequency, 
+          max.words=100, colors = brewer.pal(6, "Dark2"), scale=c(5, .5))
+##Bigram Frequency (50 words)
+wordcloud(words=bi_freq$words, freq=bi_freq$frequency, 
+          max.words=50, colors = brewer.pal(6, "Dark2"), scale=c(5, .5))
+##Trigram Frequency (20 words)
+wordcloud(words=tri_freq$words, freq=tri_freq$frequency, 
+          max.words=20, colors = brewer.pal(6, "Dark2"), scale=c(4, .5))
+####The second set of plots will be using Bar charts
+#One Word Frequency (Top 10)
+FQ1<-plot_freq <- ggplot(data = uni_freq[order(-uni_freq$frequency),][1:10, ], 
+                aes(x = reorder(words, -frequency), y=frequency)) +
+                geom_bar(stat="identity", fill="green") + 
+                ggtitle("One Word - Top 10") + 
+                                        xlab("words") +  ylab("frequency")
+FQ1
+#Two Word Frequency (Top 10)
+FQ2<-plot_freq <- ggplot(data = bi_freq[order(-bi_freq$frequency),][1:10, ], 
+                aes(x = reorder(words, -frequency), y=frequency)) +
+                geom_bar(stat="identity", fill="blue") + 
+                        theme(axis.text.x = element_text(angle = 45)) + 
+                ggtitle("Two Word - Top 10") + 
+                                        xlab("words") +  ylab("frequency")
+FQ2
+#Three Word Frequency (Top 10)
+FQ3<-plot_freq <- ggplot(data = tri_freq[order(-tri_freq$frequency),][1:10, ], 
+                aes(x = reorder(words, -frequency), y=frequency)) +
+                geom_bar(stat="identity", fill="brown") + 
+                        theme(axis.text.x = element_text(angle = 45)) + 
+                ggtitle("Three Word - Top 10") + 
+                                        xlab("words") +  ylab("frequency")
+FQ3
+###Additional Analysis involves calculating the number of unique words needed in a frequency dictionary to cover 50%, 75%, and 90% of all word instances in the file for each N-gram - Unigram, Bigram, and Trigram respectively 
+Coverage <- function(df, coverage) {
+    c <- coverage * sum(df$frequency)
+    s <- 0
+    for (i in 1:length(df[,1])) {
+        s <- s + df[i,]$frequency
+        if (s >= c) {
+            break
+        }
+    }
+    return(i)
+}
+#Coverage at 50% for Unigram, Bigram, and Trigram respectively 
+Coverage(uni_freq, .5)
+Coverage(bi_freq, .5)
+Coverage(tri_freq, .5)
+#Coverage at 75% for Unigram, Bigram, and Trigram respectively 
+Coverage(uni_freq, .75)
+Coverage(bi_freq, .75)
+Coverage(tri_freq, .75)
+#Coverage at 90% for Unigram, Bigram, and Trigram respectively 
+Coverage(uni_freq, .9)
+Coverage(bi_freq, .9)
+Coverage(tri_freq, .9)
+```
+
+##Conclusion
+This concludes our initial exploratory analysis of the data.  This provides the foundation for our next activity which will be to build a predictive algorithm that uses N-gram.  The algorithm wll be used to develop a Shinyapp.  The idea is to develop a Shinyapp that can be used to suggest then next word after a phrase or word has been entered.  Similar to what you may have experienced in the past using various computer desktop/cloud software or apps on various devices.  
